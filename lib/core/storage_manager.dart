@@ -20,7 +20,44 @@ class StorageManager {
   Future<Database> get database async {
     if (_database != null) return _database!;
     _database = await _initDatabase();
+    await _ensureQuizQueueTableExists();
     return _database!;
+  }
+
+  /// Ensure quiz_queue table exists (for legacy databases)
+  Future<void> _ensureQuizQueueTableExists() async {
+    if (_database == null) return;
+
+    try {
+      // Try to query the table
+      await _database!.rawQuery('SELECT COUNT(*) FROM quiz_queue LIMIT 1');
+    } catch (e) {
+      // Table doesn't exist, create it
+      print('Creating missing quiz_queue table...');
+      await _database!.execute('''
+        CREATE TABLE IF NOT EXISTS quiz_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          knowledge_id INTEGER NOT NULL,
+          question_id INTEGER NOT NULL,
+          priority INTEGER DEFAULT 100,
+          next_review_date TEXT NOT NULL,
+          easiness_factor REAL DEFAULT 2.5,
+          current_interval INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (knowledge_id) REFERENCES knowledge(id) ON DELETE CASCADE,
+          FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+        )
+      ''');
+
+      await _database!.execute(
+          'CREATE INDEX IF NOT EXISTS idx_queue_priority ON quiz_queue(priority DESC, next_review_date)');
+      await _database!.execute(
+          'CREATE INDEX IF NOT EXISTS idx_queue_knowledge ON quiz_queue(knowledge_id)');
+      await _database!.execute(
+          'CREATE INDEX IF NOT EXISTS idx_queue_review_date ON quiz_queue(next_review_date)');
+
+      print('quiz_queue table created successfully');
+    }
   }
 
   /// Initialize database and create tables
@@ -30,7 +67,7 @@ class StorageManager {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
@@ -51,6 +88,35 @@ class StorageManager {
       // Add mode column to knowledge table
       await db.execute(
           'ALTER TABLE knowledge ADD COLUMN mode TEXT DEFAULT "normal"');
+    }
+    if (oldVersion < 4) {
+      // Create quiz_queue table for SM-2 spaced repetition
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS quiz_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          knowledge_id INTEGER NOT NULL,
+          question_id INTEGER NOT NULL,
+          priority INTEGER DEFAULT 100,
+          next_review_date TEXT NOT NULL,
+          easiness_factor REAL DEFAULT 2.5,
+          current_interval INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (knowledge_id) REFERENCES knowledge(id) ON DELETE CASCADE,
+          FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_queue_priority ON quiz_queue(priority DESC, next_review_date)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_queue_knowledge ON quiz_queue(knowledge_id)');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_queue_review_date ON quiz_queue(next_review_date)');
+    }
+    if (oldVersion < 5) {
+      // Add index for knowledge created_at for faster sorting
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_knowledge_created_at ON knowledge(created_at DESC)');
     }
   }
 
@@ -128,6 +194,8 @@ class StorageManager {
         'CREATE INDEX idx_vocabulary_language ON vocabulary(language)');
     await db.execute(
         'CREATE INDEX idx_vocabulary_last_shown ON vocabulary(last_shown)');
+    await db.execute(
+        'CREATE INDEX idx_knowledge_created_at ON knowledge(created_at DESC)');
     await db.execute(
         'CREATE INDEX idx_quiz_questions_knowledge_id ON quiz_questions(knowledge_id)');
     await db.execute(
@@ -258,7 +326,16 @@ class StorageManager {
   }
 
   /// Get all knowledge items
-  Future<List<Knowledge>> getAllKnowledge({String? topic}) async {
+  ///
+  /// API Test:
+  /// ```dart
+  /// // Load first page (20 items)
+  /// final page1 = await storage.getAllKnowledge(limit: 20, offset: 0);
+  /// // Load second page
+  /// final page2 = await storage.getAllKnowledge(limit: 20, offset: 20);
+  /// ```
+  Future<List<Knowledge>> getAllKnowledge(
+      {String? topic, int? limit, int? offset}) async {
     final db = await database;
     final List<Map<String, dynamic>> maps;
 
@@ -268,9 +345,16 @@ class StorageManager {
         where: 'topic = ?',
         whereArgs: [topic],
         orderBy: 'created_at DESC',
+        limit: limit,
+        offset: offset,
       );
     } else {
-      maps = await db.query('knowledge', orderBy: 'created_at DESC');
+      maps = await db.query(
+        'knowledge',
+        orderBy: 'created_at DESC',
+        limit: limit,
+        offset: offset,
+      );
     }
 
     return List.generate(maps.length, (i) => Knowledge.fromMap(maps[i]));
@@ -330,12 +414,23 @@ class StorageManager {
   }
 
   /// Get all quiz questions for a knowledge item
-  Future<List<QuizQuestion>> getQuestionsByKnowledgeId(int knowledgeId) async {
+  ///
+  /// API Test:
+  /// ```dart
+  /// // Load first 10 questions
+  /// final page1 = await storage.getQuestionsByKnowledgeId(1, limit: 10, offset: 0);
+  /// // Load next 10
+  /// final page2 = await storage.getQuestionsByKnowledgeId(1, limit: 10, offset: 10);
+  /// ```
+  Future<List<QuizQuestion>> getQuestionsByKnowledgeId(int knowledgeId,
+      {int? limit, int? offset}) async {
     final db = await database;
     final maps = await db.query(
       'quiz_questions',
       where: 'knowledge_id = ?',
       whereArgs: [knowledgeId],
+      limit: limit,
+      offset: offset,
     );
 
     return List.generate(maps.length, (i) => QuizQuestion.fromMap(maps[i]));

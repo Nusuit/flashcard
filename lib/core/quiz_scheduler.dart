@@ -214,11 +214,20 @@ class QuizScheduler {
   ///
   /// Performance: 5-10ms using queue, fires QuizEvent with {question, knowledge, queueItemId}
   Future<void> triggerQuiz({int? knowledgeId}) async {
+    debugPrint('┌─ TRIGGER QUIZ START ─────────────────────');
+    debugPrint('│ Knowledge ID: $knowledgeId');
+    debugPrint('│ Processing: $_isProcessingQuiz');
+
     // Prevent concurrent triggers
-    if (_isProcessingQuiz) return;
+    if (_isProcessingQuiz) {
+      debugPrint('│ ❌ Already processing, aborting');
+      debugPrint('└──────────────────────────────────────────');
+      return;
+    }
     _isProcessingQuiz = true;
 
     try {
+      debugPrint('│ 📥 Fetching quiz from queue...');
       // Get next quiz from queue (instant!)
       final queueItem = knowledgeId != null
           ? (await _storageManager.getStudySession(knowledgeId, limit: 1))
@@ -226,23 +235,40 @@ class QuizScheduler {
           : await _storageManager.getNextQuizFromQueue();
 
       if (queueItem == null) {
-        debugPrint('No quiz available in queue');
+        debugPrint('│ ❌ No quiz available in queue');
+        debugPrint('└──────────────────────────────────────────');
         _isProcessingQuiz = false;
         return;
       }
 
-      // Get the question and knowledge
-      final question = (await _storageManager
-              .getQuestionsByKnowledgeId(queueItem.knowledgeId))
-          .firstWhere((q) => q.id == queueItem.questionId);
+      debugPrint('│ ✓ Queue item found: ID=${queueItem.id}');
+      debugPrint('│   Knowledge ID: ${queueItem.knowledgeId}');
+      debugPrint('│   Question ID: ${queueItem.questionId}');
+      debugPrint('│ 📥 Fetching question...');
 
+      // Get the question and knowledge
+      final questions = await _storageManager
+          .getQuestionsByKnowledgeId(queueItem.knowledgeId);
+
+      debugPrint('│ ✓ Found ${questions.length} questions');
+
+      final question =
+          questions.firstWhere((q) => q.id == queueItem.questionId);
+      debugPrint('│ ✓ Question found: "${question.question}"');
+
+      debugPrint('│ 📥 Fetching knowledge...');
       final knowledge =
           await _storageManager.getKnowledgeById(queueItem.knowledgeId);
 
       if (knowledge == null) {
+        debugPrint('│ ❌ Knowledge not found');
+        debugPrint('└──────────────────────────────────────────');
         _isProcessingQuiz = false;
         return;
       }
+
+      debugPrint('│ ✓ Knowledge found: "${knowledge.topic}"');
+      debugPrint('│ 🔥 Firing QuizEvent...');
 
       _eventBus.fire(QuizEvent(
         QuizEventType.quizReady,
@@ -252,8 +278,13 @@ class QuizScheduler {
           'queueItemId': queueItem.id, // Important for updating after answer
         },
       ));
-    } catch (e) {
-      debugPrint('Manual Quiz Trigger Error: $e');
+
+      debugPrint('│ ✓ Event fired successfully');
+      debugPrint('└─ TRIGGER QUIZ COMPLETED ────────────────');
+    } catch (e, stackTrace) {
+      debugPrint('│ ❌ ERROR: $e');
+      debugPrint('│ Stack: $stackTrace');
+      debugPrint('└──────────────────────────────────────────');
     } finally {
       _isProcessingQuiz = false;
     }

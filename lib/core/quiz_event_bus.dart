@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/material.dart';
 
 /// Event types for quiz system
 enum QuizEventType {
@@ -32,8 +33,13 @@ class QuizEventBus {
   Stream<QuizEvent> get stream => _controller.stream;
 
   void fire(QuizEvent event) {
+    debugPrint(
+        '🔥 EVENT BUS FIRE: ${event.type}, hasListeners: ${_controller.hasListener}, isClosed: ${_controller.isClosed}');
     if (!_controller.isClosed) {
       _controller.add(event);
+      debugPrint('✓ Event added to stream');
+    } else {
+      debugPrint('❌ Controller is closed, cannot fire event');
     }
   }
 

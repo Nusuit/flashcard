@@ -26,7 +26,7 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
 
   Future<void> _loadKnowledge() async {
     setState(() => _isLoading = true);
-    
+
     try {
       final items = await _storage.getAllKnowledge();
       setState(() {
@@ -120,8 +120,9 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
         _loadKnowledge();
         // Refresh dashboard statistics
         if (!mounted) return;
-        Provider.of<AppStateProvider>(context, listen: false).refreshDashboard();
-        
+        Provider.of<AppStateProvider>(context, listen: false)
+            .refreshDashboard();
+
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -143,7 +144,8 @@ class _KnowledgeScreenState extends State<KnowledgeScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Delete Note'),
-        content: const Text('This will also delete all generated questions. Continue?'),
+        content: const Text(
+            'This will also delete all generated questions. Continue?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -339,24 +341,59 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
   List<QuizQuestion> _questions = [];
   bool _isLoading = true;
   bool _isGenerating = false;
+  bool _isLoadingMore = false;
+  final ScrollController _scrollController = ScrollController();
+  static const int _pageSize = 10;
 
   @override
   void initState() {
     super.initState();
-    _loadQuestions();
+    _loadQuestions(isInitial: true);
+
+    // Add scroll listener for lazy loading
+    _scrollController.addListener(() {
+      if (_scrollController.position.pixels >=
+              _scrollController.position.maxScrollExtent * 0.8 &&
+          !_isLoadingMore) {
+        _loadQuestions();
+      }
+    });
   }
 
-  Future<void> _loadQuestions() async {
-    setState(() => _isLoading = true);
-    
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadQuestions({bool isInitial = false}) async {
+    if (isInitial) {
+      setState(() => _isLoading = true);
+    } else {
+      setState(() => _isLoadingMore = true);
+    }
+
     try {
-      final questions = await _storage.getQuestionsByKnowledgeId(widget.knowledge.id!);
+      final questions = await _storage.getQuestionsByKnowledgeId(
+        widget.knowledge.id!,
+        limit: _pageSize,
+        offset: isInitial ? 0 : _questions.length,
+      );
+
       setState(() {
-        _questions = questions;
+        if (isInitial) {
+          _questions = questions;
+        } else {
+          _questions.addAll(questions);
+        }
         _isLoading = false;
+        _isLoadingMore = false;
       });
     } catch (e) {
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _isLoadingMore = false;
+      });
     }
   }
 
@@ -365,7 +402,7 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
 
     try {
       final generator = LLMQuestionGenerator();
-      
+
       // Check if Ollama is available
       final isAvailable = await generator.isAvailable();
       if (!isAvailable) {
@@ -380,9 +417,9 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
 
       // Save questions
       await _storage.insertQuizQuestions(newQuestions);
-      
-      await _loadQuestions();
-      
+
+      await _loadQuestions(isInitial: true);
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -411,6 +448,7 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
         title: Text(widget.knowledge.topic),
       ),
       body: SingleChildScrollView(
+        controller: _scrollController,
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -425,8 +463,8 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                     Text(
                       'Content',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                            fontWeight: FontWeight.bold,
+                          ),
                     ),
                     const SizedBox(height: 8),
                     Text(widget.knowledge.content),
@@ -446,7 +484,9 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.auto_awesome),
-              label: Text(_isGenerating ? 'Generating...' : 'Generate Questions with AI'),
+              label: Text(_isGenerating
+                  ? 'Generating...'
+                  : 'Generate Questions with AI'),
             ),
             const SizedBox(height: 24),
 
@@ -454,8 +494,8 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
             Text(
               'Generated Questions (${_questions.length})',
               style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
+                    fontWeight: FontWeight.bold,
+                  ),
             ),
             const SizedBox(height: 12),
 
@@ -467,7 +507,8 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      Icon(Icons.quiz_outlined, size: 48, color: Colors.grey[400]),
+                      Icon(Icons.quiz_outlined,
+                          size: 48, color: Colors.grey[400]),
                       const SizedBox(height: 12),
                       Text(
                         'No questions yet',
@@ -532,7 +573,8 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                               const SizedBox(height: 4),
                               ...question.options!.map(
                                 (opt) => Padding(
-                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 2),
                                   child: Text('• $opt'),
                                 ),
                               ),
@@ -544,6 +586,19 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                   ),
                 );
               }),
+
+            // Loading more indicator
+            if (_isLoadingMore)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

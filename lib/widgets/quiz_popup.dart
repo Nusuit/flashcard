@@ -21,8 +21,7 @@ class QuizPopup extends StatefulWidget {
   State<QuizPopup> createState() => _QuizPopupState();
 }
 
-class _QuizPopupState extends State<QuizPopup>
-    with SingleTickerProviderStateMixin {
+class _QuizPopupState extends State<QuizPopup> {
   bool _isMinimized = false;
   bool _isAnswered = false;
   bool _isEvaluating = false;
@@ -30,30 +29,15 @@ class _QuizPopupState extends State<QuizPopup>
   String _userAnswer = '';
   Map<String, dynamic>? _evaluation;
   final TextEditingController _answerController = TextEditingController();
-  late AnimationController _animationController;
-  late Animation<Offset> _slideAnimation;
   final GeminiService _geminiService = GeminiService();
 
   @override
   void initState() {
     super.initState();
-    _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _animationController,
-      curve: Curves.easeOut,
-    ));
-    _animationController.forward();
   }
 
   @override
   void dispose() {
-    _animationController.dispose();
     _answerController.dispose();
     super.dispose();
   }
@@ -92,10 +76,12 @@ class _QuizPopupState extends State<QuizPopup>
       _isEvaluating = false;
     });
 
-    widget.onAnswered(
-      evaluation['isCorrect'] ?? false,
-      evaluation['score'] ?? 0,
-    );
+    // Call onAnswered with safe null checks
+    final isCorrect = evaluation['isCorrect'] as bool? ?? false;
+    final score = evaluation['score'] as int? ?? 0;
+
+    debugPrint('✅ Quiz answered: isCorrect=$isCorrect, score=$score');
+    widget.onAnswered(isCorrect, score);
   }
 
   void _askMoreQuestions() async {
@@ -118,30 +104,27 @@ Câu trả lời của tôi: ${widget.question.questionType == QuestionType.mult
 
   @override
   Widget build(BuildContext context) {
-    return SlideTransition(
-      position: _slideAnimation,
-      child: Positioned(
-        top: 24,
-        right: 24,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          width: _isMinimized ? 300 : 400,
-          constraints: BoxConstraints(
-            maxHeight: _isMinimized ? 60 : 600,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.15),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: _isMinimized ? _buildMinimizedView() : _buildExpandedView(),
+    return Positioned(
+      top: 24,
+      right: 24,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        width: _isMinimized ? 300 : 400,
+        constraints: BoxConstraints(
+          maxHeight: _isMinimized ? 60 : 600,
         ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: _isMinimized ? _buildMinimizedView() : _buildExpandedView(),
       ),
     );
   }
@@ -160,7 +143,7 @@ Câu trả lời của tôi: ${widget.question.questionType == QuestionType.mult
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   gradient: const LinearGradient(
-                    colors: [Color(0xFFF59E0B), Color(0xFFEF4444)],
+                    colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
                   ),
                   borderRadius: BorderRadius.circular(8),
                 ),
@@ -199,7 +182,7 @@ Câu trả lời của tôi: ${widget.question.questionType == QuestionType.mult
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             gradient: const LinearGradient(
-              colors: [Color(0xFFF59E0B), Color(0xFFEF4444)],
+              colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
@@ -239,8 +222,9 @@ Câu trả lời của tôi: ${widget.question.questionType == QuestionType.mult
           ),
         ),
 
-        // Content
-        Flexible(
+        // Content - Remove Flexible, use Container with constraints
+        Container(
+          constraints: const BoxConstraints(maxHeight: 520),
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -390,10 +374,14 @@ Câu trả lời của tôi: ${widget.question.questionType == QuestionType.mult
   }
 
   Widget _buildEvaluationResult() {
-    final isCorrect = _evaluation!['isCorrect'] as bool? ?? false;
+    final isCorrect = _evaluation!['isCorrect'] as bool?;
     final score = _evaluation!['score'] as int? ?? 0;
     final feedback = _evaluation!['feedback'] as String? ?? '';
     final suggestion = _evaluation!['suggestion'] as String? ?? '';
+
+    // Handle null isCorrect (not evaluated due to API overload)
+    final bool isEvaluated = isCorrect != null;
+    final bool showAsCorrect = isCorrect ?? false;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -402,24 +390,38 @@ Câu trả lời của tôi: ${widget.question.questionType == QuestionType.mult
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
-            color: isCorrect
-                ? Colors.green.withOpacity(0.1)
-                : Colors.orange.withOpacity(0.1),
+            color: !isEvaluated
+                ? Colors.blue.withOpacity(0.1)
+                : showAsCorrect
+                    ? Colors.green.withOpacity(0.1)
+                    : Colors.orange.withOpacity(0.1),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isCorrect ? Icons.check_circle : Icons.info,
-                color: isCorrect ? Colors.green : Colors.orange,
+                !isEvaluated
+                    ? Icons.cloud_off
+                    : showAsCorrect
+                        ? Icons.check_circle
+                        : Icons.info,
+                color: !isEvaluated
+                    ? Colors.blue
+                    : showAsCorrect
+                        ? Colors.green
+                        : Colors.orange,
                 size: 20,
               ),
               const SizedBox(width: 8),
               Text(
-                '$score/100 điểm',
+                !isEvaluated ? 'Đã lưu câu trả lời' : '$score/100 điểm',
                 style: TextStyle(
-                  color: isCorrect ? Colors.green : Colors.orange,
+                  color: !isEvaluated
+                      ? Colors.blue
+                      : showAsCorrect
+                          ? Colors.green
+                          : Colors.orange,
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),

@@ -17,12 +17,30 @@ build/
 
 *.log
 
+# Database files
 *.sqlite
 *.sqlite-journal
 *.db
+*.db-shm
+*.db-wal
 
+# Environment variables - NEVER commit these!
 .env
-*.env.local
+.env.local
+.env.*.local
+*.env
+!.env.example
+
+# Build and setup scripts (Windows specific)
+*.bat
+RUN_AFTER_BUILDTOOLS.bat
+
+# Demo and temporary files
+demo_app.py
+knop_demo.db
+
+# Flutter DevTools
+devtools_options.yaml
 
 ios/.symlinks/
 ios/Flutter/.last_build_id

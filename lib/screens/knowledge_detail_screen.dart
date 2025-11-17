@@ -6,6 +6,7 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'dart:io';
 import '../models/knowledge.dart';
 import '../providers/app_state_provider.dart';
+import '../core/quiz_scheduler.dart';
 
 class KnowledgeDetailScreen extends StatefulWidget {
   final Knowledge knowledge;
@@ -140,6 +141,28 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                   ),
                 ),
                 const Spacer(),
+                // Start learning button
+                FilledButton.icon(
+                  onPressed: () {
+                    QuizScheduler().triggerQuiz(knowledgeId: _knowledge.id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content:
+                            Text('Đang tạo quiz cho "${_knowledge.topic}"...'),
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                    Navigator.pop(context); // Back to home to see popup
+                  },
+                  icon: const Icon(Icons.play_arrow, size: 20),
+                  label:
+                      const Text('Bắt đầu học', style: TextStyle(fontSize: 14)),
+                  style: FilledButton.styleFrom(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 // Reminder button
                 OutlinedButton.icon(
                   onPressed: _editReminderTime,
@@ -156,6 +179,33 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                         const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   ),
                 ),
+                const SizedBox(width: 12),
+                // PDF Attach icon
+                IconButton(
+                  icon: const Icon(Icons.attach_file, size: 20),
+                  onPressed: _importPdfToKnowledge,
+                  tooltip: 'Thêm PDF',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
+                ),
+                // PDF Preview icon
+                if (_knowledge.pdfFiles.isNotEmpty)
+                  IconButton(
+                    icon: Badge(
+                      label: Text('${_knowledge.pdfFiles.length}'),
+                      child: const Icon(Icons.picture_as_pdf, size: 20),
+                    ),
+                    onPressed: _showPdfListPopup,
+                    tooltip: 'Xem PDF (${_knowledge.pdfFiles.length})',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                  ),
                 const SizedBox(width: 12),
                 // Delete button
                 IconButton(
@@ -186,7 +236,18 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                       final appState =
                           Provider.of<AppStateProvider>(context, listen: false);
                       await appState.storage.deleteKnowledge(_knowledge.id!);
-                      if (mounted) Navigator.pop(context);
+                      await appState.refreshDashboard();
+                      // Reload knowledge list
+                      appState.loadKnowledgeList(isInitial: true);
+                      if (mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Đã xóa tri thức'),
+                            backgroundColor: Colors.green,
+                          ),
+                        );
+                      }
                     }
                   },
                   padding: EdgeInsets.zero,
@@ -195,15 +256,24 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                     minHeight: 36,
                   ),
                 ),
-                const SizedBox(width: 12),
-                // Start quiz button
-                TextButton(
+                const SizedBox(width: 8),
+                // Edit button
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined, size: 20),
                   onPressed: () {
-                    // TODO: Implement quiz
+                    // TODO: Implement edit knowledge
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Chức năng sửa đang được phát triển'),
+                        duration: Duration(seconds: 2),
+                      ),
+                    );
                   },
-                  child: const Text(
-                    'Bắt đầu kiểm tra',
-                    style: TextStyle(fontSize: 14),
+                  tooltip: 'Sửa',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
                   ),
                 ),
               ],
@@ -232,118 +302,10 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
                         onPressed: () {
                           // TODO: Add flashcard
                         },
-                        child: const Text('Thêm thẻ'),
+                        child: const Text('Thêm kiến thức'),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 16),
-
-                  // PDF Files Section
-                  if (_knowledge.pdfFiles.isNotEmpty)
-                    Card(
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(Icons.picture_as_pdf,
-                                    color: Colors.red, size: 20),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'File PDF đã import',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const Spacer(),
-                                TextButton.icon(
-                                  onPressed: _importPdfToKnowledge,
-                                  icon: const Icon(Icons.add, size: 18),
-                                  label: const Text('Thêm PDF'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            ..._knowledge.pdfFiles.map((pdfPath) {
-                              final fileName =
-                                  pdfPath.split(Platform.pathSeparator).last;
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.red.shade50,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border:
-                                      Border.all(color: Colors.red.shade200),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.picture_as_pdf,
-                                        color: Colors.red, size: 18),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            fileName,
-                                            style: const TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            pdfPath,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: Colors.grey[600],
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.close, size: 18),
-                                      onPressed: () => _removePdfFile(pdfPath),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(
-                                        minWidth: 32,
-                                        minHeight: 32,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
-                        ),
-                      ),
-                    ),
-
-                  if (_knowledge.pdfFiles.isEmpty)
-                    OutlinedButton.icon(
-                      onPressed: _importPdfToKnowledge,
-                      icon: const Icon(Icons.picture_as_pdf, size: 18),
-                      label: const Text('Import PDF vào project này'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                      ),
-                    ),
-
                   const SizedBox(height: 16),
 
                   // Flashcard content
@@ -541,6 +503,116 @@ class _KnowledgeDetailScreenState extends State<KnowledgeDetailScreen> {
         );
       }
     }
+  }
+
+  /// Shows a popup dialog displaying all PDF files attached to this knowledge.
+  ///
+  /// Displays a scrollable list of PDFs with:
+  /// - File name and path
+  /// - Remove button for each PDF
+  ///
+  /// The dialog is dismissible and updates state when PDFs are removed.
+  void _showPdfListPopup() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.picture_as_pdf, color: Colors.red, size: 24),
+            const SizedBox(width: 8),
+            const Text('File PDF đã import'),
+            const Spacer(),
+            TextButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _importPdfToKnowledge();
+              },
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Thêm'),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 500,
+          child: _knowledge.pdfFiles.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text(
+                    'Chưa có file PDF nào',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _knowledge.pdfFiles.length,
+                  itemBuilder: (context, index) {
+                    final pdfPath = _knowledge.pdfFiles[index];
+                    final fileName = pdfPath.split(Platform.pathSeparator).last;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.picture_as_pdf,
+                              color: Colors.red, size: 18),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  fileName,
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                Text(
+                                  pdfPath,
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18),
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _removePdfFile(pdfPath);
+                            },
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 32,
+                              minHeight: 32,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _removePdfFile(String pdfPath) async {

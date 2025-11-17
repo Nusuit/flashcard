@@ -26,6 +26,7 @@ class NewHomeScreen extends StatefulWidget {
 
 class _NewHomeScreenState extends State<NewHomeScreen> {
   Knowledge? _selectedKnowledge;
+  Knowledge? _selectedDashboardKnowledge; // For dashboard dropdown filter
   bool _showOverlay = false;
   QuizQuestion? _currentQuiz;
   Knowledge? _currentQuizKnowledge;
@@ -33,6 +34,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   final StorageManager _storageManager = StorageManager();
   StreamSubscription<QuizEvent>? _quizEventSubscription;
   int? _currentQueueItemId; // Track queue item ID for SM-2 updates
+  final ScrollController _knowledgeScrollController = ScrollController();
 
   @override
   void initState() {
@@ -41,18 +43,39 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     // Listen to quiz events via EventBus (with error handling)
     _quizEventSubscription = _quizScheduler.eventBus.stream.listen(
       (event) {
+        debugPrint('>>> EVENT BUS: Received event type: ${event.type}');
         if (event.type == QuizEventType.quizReady && mounted) {
+          debugPrint('>>> EVENT: QuizReady received');
+          debugPrint('>>> EVENT DATA: ${event.data?.keys}');
+          final question = event.data?['question'] as QuizQuestion?;
+          final knowledge = event.data?['knowledge'] as Knowledge?;
+          final queueId = event.data?['queueItemId'] as int?;
+          debugPrint('>>> QUESTION: ${question?.question}');
+          debugPrint('>>> KNOWLEDGE: ${knowledge?.topic}');
+          debugPrint('>>> QUEUE_ID: $queueId');
           setState(() {
-            _currentQuiz = event.data?['question'] as QuizQuestion?;
-            _currentQuizKnowledge = event.data?['knowledge'] as Knowledge?;
-            _currentQueueItemId = event.data?['queueItemId'] as int?;
+            _currentQuiz = question;
+            _currentQuizKnowledge = knowledge;
+            _currentQueueItemId = queueId;
+            debugPrint(
+                '>>> STATE UPDATED: currentQuiz=${_currentQuiz != null}, knowledge=${_currentQuizKnowledge != null}');
           });
         }
       },
       onError: (error) {
-        debugPrint('Quiz event error: $error');
+        debugPrint('!!! EVENT BUS ERROR: $error');
       },
     );
+
+    // Add scroll listener for knowledge list pagination
+    _knowledgeScrollController.addListener(() {
+      if (_knowledgeScrollController.position.pixels >=
+          _knowledgeScrollController.position.maxScrollExtent * 0.8) {
+        // Load more when scrolled to 80% of the list
+        final appState = Provider.of<AppStateProvider>(context, listen: false);
+        appState.loadKnowledgeList();
+      }
+    });
 
     // Start scheduler with 30-minute interval
     _quizScheduler.start();
@@ -62,6 +85,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   void dispose() {
     _quizEventSubscription?.cancel();
     _quizScheduler.stop();
+    _knowledgeScrollController.dispose();
     super.dispose();
   }
 
@@ -132,7 +156,6 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
   Widget _buildSidebar(BuildContext context) {
     final theme = Theme.of(context);
-    final appState = Provider.of<AppStateProvider>(context);
 
     return Container(
       width: 224,
@@ -218,16 +241,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
 
           // Knowledge list
           Expanded(
-            child: FutureBuilder<List<Knowledge>>(
-              future: appState.getKnowledgeList(),
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            child: Consumer<AppStateProvider>(
+              builder: (context, appState, _) {
+                final knowledgeList = appState.knowledgeListItems;
+                final isLoading = appState.isLoadingKnowledge;
 
-                final knowledgeList = snapshot.data ?? [];
-
-                if (knowledgeList.isEmpty) {
+                if (knowledgeList.isEmpty && !isLoading) {
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(16),
@@ -254,9 +273,24 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 }
 
                 return ListView.builder(
+                  controller: _knowledgeScrollController,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: knowledgeList.length,
+                  itemCount: knowledgeList.length + (isLoading ? 1 : 0),
                   itemBuilder: (context, index) {
+                    // Loading indicator at the end
+                    if (index == knowledgeList.length) {
+                      return const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Center(
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      );
+                    }
+
                     final knowledge = knowledgeList[index];
                     final isSelected = _selectedKnowledge?.id == knowledge.id;
 
@@ -379,32 +413,40 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                           ),
                         ),
                         const SizedBox(width: 16),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Text(
-                                'Toàn bộ',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w500,
+                        InkWell(
+                          onTap: () => _showKnowledgeSelectionDialog(
+                              isForDashboard: true),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  _selectedDashboardKnowledge?.topic ??
+                                      'Toàn bộ',
+                                  style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              Icon(
-                                Icons.keyboard_arrow_down,
-                                size: 16,
-                                color: Colors.grey[600],
-                              ),
-                            ],
+                                const SizedBox(width: 8),
+                                Icon(
+                                  Icons.keyboard_arrow_down,
+                                  size: 16,
+                                  color: Colors.grey[600],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
@@ -421,19 +463,7 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                 ),
               ),
               FilledButton.icon(
-                onPressed: () {
-                  setState(() {
-                    if (_selectedKnowledge != null) {
-                      _showOverlay = true;
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Vui lòng chọn một tri thức trước'),
-                        ),
-                      );
-                    }
-                  });
-                },
+                onPressed: () => _showKnowledgeSelectionDialog(isForQuiz: true),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Bắt đầu học'),
                 style: FilledButton.styleFrom(
@@ -604,10 +634,9 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            FutureBuilder<List<Knowledge>>(
-              future: appState.getKnowledgeList(),
-              builder: (context, snapshot) {
-                final knowledgeList = snapshot.data ?? [];
+            Builder(
+              builder: (context) {
+                final knowledgeList = appState.knowledgeListItems;
                 final recentList = knowledgeList.take(5).toList();
 
                 if (recentList.isEmpty) {
@@ -863,6 +892,87 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
             backgroundColor: Colors.green,
           ),
         );
+      }
+    }
+  }
+
+  /// Show knowledge selection dialog for dashboard filter or quiz
+  Future<void> _showKnowledgeSelectionDialog({
+    bool isForDashboard = false,
+    bool isForQuiz = false,
+  }) async {
+    final appState = Provider.of<AppStateProvider>(context, listen: false);
+    final knowledgeList = appState.knowledgeListItems;
+
+    if (knowledgeList.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chưa có tri thức nào. Vui lòng tạo tri thức trước!'),
+        ),
+      );
+      return;
+    }
+
+    final selected = await showDialog<Knowledge?>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isForQuiz ? 'Chọn tri thức để học' : 'Lọc theo tri thức'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isForDashboard)
+                ListTile(
+                  leading: const Icon(Icons.select_all),
+                  title: const Text('Toàn bộ'),
+                  onTap: () => Navigator.pop(context, null),
+                ),
+              ...knowledgeList.map((knowledge) => ListTile(
+                    leading: const Icon(Icons.lightbulb),
+                    title: Text(knowledge.topic),
+                    subtitle: knowledge.description.isNotEmpty
+                        ? Text(
+                            knowledge.description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          )
+                        : null,
+                    onTap: () => Navigator.pop(context, knowledge),
+                  )),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Hủy'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+
+    if (isForDashboard) {
+      setState(() {
+        _selectedDashboardKnowledge = selected;
+      });
+    } else if (isForQuiz) {
+      if (selected != null) {
+        // Trigger quiz for selected knowledge
+        debugPrint(
+            '=== QUIZ START: User selected knowledge: ${selected.id} (${selected.topic}) ===');
+        debugPrint('Current quiz state before trigger: $_currentQuiz');
+        await QuizScheduler().triggerQuiz(knowledgeId: selected.id);
+        debugPrint('After triggerQuiz() call, current quiz: $_currentQuiz');
+        debugPrint('Current quiz knowledge: $_currentQuizKnowledge');
+        debugPrint('=== QUIZ TRIGGER COMPLETED ===');
+      } else {
+        // Trigger random quiz
+        debugPrint('=== QUIZ START: Random quiz requested ===');
+        await QuizScheduler().triggerQuiz();
+        debugPrint('=== QUIZ TRIGGER COMPLETED ===');
       }
     }
   }

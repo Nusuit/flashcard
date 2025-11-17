@@ -15,11 +15,22 @@ class AppStateProvider extends ChangeNotifier {
   Map<String, dynamic> _statistics = {};
   bool _isLoading = false;
 
+  // Pagination state for knowledge list
+  List<Knowledge> _knowledgeListItems = [];
+  bool _isLoadingKnowledge = false;
+  bool _hasMoreKnowledge = true;
+  static const int _knowledgePageSize = 20;
+
   AppSettings get settings => _settings;
   Map<String, int> get counts => _counts;
   Map<String, dynamic> get statistics => _statistics;
   bool get isLoading => _isLoading;
   StorageManager get storage => _storage;
+
+  // Getters for knowledge pagination
+  List<Knowledge> get knowledgeListItems => _knowledgeListItems;
+  bool get isLoadingKnowledge => _isLoadingKnowledge;
+  bool get hasMoreKnowledge => _hasMoreKnowledge;
 
   AppStateProvider() {
     _loadInitialData();
@@ -33,6 +44,7 @@ class AppStateProvider extends ChangeNotifier {
     try {
       _settings = await _storage.loadSettings();
       await refreshDashboard();
+      await loadKnowledgeList(isInitial: true); // Load first page
     } catch (e) {
       print('Error loading initial data: $e');
     }
@@ -92,13 +104,58 @@ class AppStateProvider extends ChangeNotifier {
       QuizQueueBuilder().buildQueueForKnowledge(knowledgeWithId);
 
       await refreshDashboard();
+
+      // Reset knowledge list to reload from beginning
+      _knowledgeListItems.clear();
+      _hasMoreKnowledge = true;
+      await loadKnowledgeList(isInitial: true);
     } catch (e) {
       print('Error adding knowledge: $e');
       rethrow;
     }
   }
 
-  /// Get knowledge list
+  /// Load knowledge list with pagination
+  ///
+  /// API Test:
+  /// ```dart
+  /// // Initial load
+  /// await appState.loadKnowledgeList(isInitial: true);
+  /// // Load more
+  /// await appState.loadKnowledgeList();
+  /// ```
+  Future<void> loadKnowledgeList({bool isInitial = false}) async {
+    if (_isLoadingKnowledge || (!_hasMoreKnowledge && !isInitial)) return;
+
+    _isLoadingKnowledge = true;
+    if (isInitial) {
+      _knowledgeListItems.clear();
+      _hasMoreKnowledge = true;
+    }
+    notifyListeners();
+
+    try {
+      final offset = isInitial ? 0 : _knowledgeListItems.length;
+      final newItems = await _storage.getAllKnowledge(
+        limit: _knowledgePageSize,
+        offset: offset,
+      );
+
+      if (newItems.length < _knowledgePageSize) {
+        _hasMoreKnowledge = false;
+      }
+
+      _knowledgeListItems.addAll(newItems);
+    } catch (e) {
+      print('Error loading knowledge list: $e');
+    }
+
+    _isLoadingKnowledge = false;
+    notifyListeners();
+  }
+
+  /// Get knowledge list (deprecated, use knowledgeListItems getter)
+  @Deprecated('Use knowledgeListItems getter and loadKnowledgeList() instead')
   Future<List<Knowledge>> getKnowledgeList() async {
     try {
       return await _storage.getAllKnowledge();

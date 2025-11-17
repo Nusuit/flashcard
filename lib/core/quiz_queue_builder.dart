@@ -58,45 +58,95 @@ class QuizQueueBuilder {
           await _storage.getQuestionsByKnowledgeId(knowledge.id!);
 
       if (questions.isEmpty) {
-        debugPrint('📝 No questions found, generating from content...');
-
-        // Generate questions from PDF content
-        final generatedQuestions = await _gemini.generateFlashcardsFromPdf(
-          knowledge.content.substring(
-              0,
-              knowledge.content.length > 3000
-                  ? 3000
-                  : knowledge.content.length),
-        );
-
-        if (generatedQuestions.isEmpty) {
-          debugPrint('⚠️ Failed to generate questions');
+        // Check if content is valid
+        if (knowledge.content.trim().isEmpty) {
+          debugPrint('⚠️ Content is empty, cannot generate questions');
           _isBuilding = false;
           return;
         }
 
-        // Save generated questions to database
-        for (var qData in generatedQuestions) {
-          final question = QuizQuestion(
-            knowledgeId: knowledge.id!,
-            question: qData['question'] as String,
-            answer: qData['answer'] as String,
-            questionType: QuestionType.values.firstWhere(
-              (e) =>
-                  e.toString().split('.').last ==
-                  (qData['type'] as String? ?? 'open'),
-              orElse: () => QuestionType.open,
-            ),
-            options: qData['options'] != null
-                ? (qData['options'] as List).map((e) => e.toString()).toList()
-                : null,
-          );
+        // Handle vocabulary mode differently
+        if (knowledge.mode == 'vocabulary') {
+          debugPrint(
+              '📚 Vocabulary mode detected, creating simple flashcards...');
 
-          final qId = await _storage.insertQuizQuestion(question);
-          questions.add(question.copyWith(id: qId));
+          // Parse content as vocabulary list (word: meaning format)
+          final lines = knowledge.content
+              .split('\n')
+              .where((line) => line.trim().isNotEmpty);
+
+          for (var line in lines) {
+            final parts = line.split(':');
+            if (parts.length >= 2) {
+              final word = parts[0].trim();
+              final meaning = parts.sublist(1).join(':').trim();
+
+              final question = QuizQuestion(
+                knowledgeId: knowledge.id!,
+                question: 'What is the meaning of "$word"?',
+                answer: meaning,
+                questionType: QuestionType.open,
+              );
+
+              final qId = await _storage.insertQuizQuestion(question);
+              questions.add(question.copyWith(id: qId));
+            }
+          }
+
+          if (questions.isEmpty) {
+            debugPrint('⚠️ Could not create vocabulary questions from content');
+            debugPrint('💡 Hint: Content should be in format "word: meaning"');
+            _isBuilding = false;
+            return;
+          }
+
+          debugPrint('✅ Created ${questions.length} vocabulary flashcards');
+        } else {
+          // Normal mode: Use Gemini
+          debugPrint('📝 No questions found, generating from content...');
+          debugPrint(
+              '📝 Content preview: ${knowledge.content.substring(0, knowledge.content.length > 100 ? 100 : knowledge.content.length)}...');
+
+          // Generate questions from PDF content
+          final contentToSend = knowledge.content.substring(
+              0,
+              knowledge.content.length > 3000
+                  ? 3000
+                  : knowledge.content.length);
+
+          debugPrint('📝 Sending ${contentToSend.length} chars to Gemini...');
+          final generatedQuestions =
+              await _gemini.generateFlashcardsFromPdf(contentToSend);
+
+          if (generatedQuestions.isEmpty) {
+            debugPrint('⚠️ Failed to generate questions');
+            _isBuilding = false;
+            return;
+          }
+
+          // Save generated questions to database
+          for (var qData in generatedQuestions) {
+            final question = QuizQuestion(
+              knowledgeId: knowledge.id!,
+              question: qData['question'] as String,
+              answer: qData['answer'] as String,
+              questionType: QuestionType.values.firstWhere(
+                (e) =>
+                    e.toString().split('.').last ==
+                    (qData['type'] as String? ?? 'open'),
+                orElse: () => QuestionType.open,
+              ),
+              options: qData['options'] != null
+                  ? (qData['options'] as List).map((e) => e.toString()).toList()
+                  : null,
+            );
+
+            final qId = await _storage.insertQuizQuestion(question);
+            questions.add(question.copyWith(id: qId));
+          }
+
+          debugPrint('✅ Generated and saved ${questions.length} questions');
         }
-
-        debugPrint('✅ Generated and saved ${questions.length} questions');
       }
 
       // 2. Build queue items with SM-2 priorities
