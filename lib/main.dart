@@ -5,6 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/reminder_engine.dart';
 import 'core/storage_manager.dart';
+import 'core/queue_migration.dart';
 import 'providers/app_state_provider.dart';
 import 'screens/new_home_screen.dart';
 
@@ -30,6 +31,10 @@ void main() async {
   // Initialize storage
   final storage = StorageManager();
   await storage.database; // Ensure database is created
+
+  // Run queue migration for existing knowledge (v4 upgrade)
+  final migration = QueueMigration();
+  await migration.runMigrationIfNeeded();
 
   runApp(const KnopApp());
 }

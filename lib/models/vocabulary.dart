@@ -12,6 +12,13 @@ class Vocabulary {
   final DateTime? lastShown;
   final DateTime createdAt;
 
+  // Enhanced metadata
+  final String? partOfSpeech; // noun, verb, adjective, etc.
+  final List<String>? tags; // user-defined tags
+  final String? audioPronunciation; // path to audio file
+  final String? aiGeneratedExample; // LLM-generated example sentence
+  final String? aiContext; // Additional context from LLM
+
   Vocabulary({
     this.id,
     required this.language,
@@ -24,6 +31,11 @@ class Vocabulary {
     this.timesShown = 0,
     this.lastShown,
     DateTime? createdAt,
+    this.partOfSpeech,
+    this.tags,
+    this.audioPronunciation,
+    this.aiGeneratedExample,
+    this.aiContext,
   }) : createdAt = createdAt ?? DateTime.now();
 
   /// Calculate success rate
@@ -49,6 +61,11 @@ class Vocabulary {
       'times_shown': timesShown,
       'last_shown': lastShown?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
+      'part_of_speech': partOfSpeech,
+      'tags': tags?.join(','),
+      'audio_pronunciation': audioPronunciation,
+      'ai_generated_example': aiGeneratedExample,
+      'ai_context': aiContext,
     };
   }
 
@@ -68,6 +85,11 @@ class Vocabulary {
           ? DateTime.parse(map['last_shown'] as String)
           : null,
       createdAt: DateTime.parse(map['created_at'] as String),
+      partOfSpeech: map['part_of_speech'] as String?,
+      tags: map['tags'] != null ? (map['tags'] as String).split(',') : null,
+      audioPronunciation: map['audio_pronunciation'] as String?,
+      aiGeneratedExample: map['ai_generated_example'] as String?,
+      aiContext: map['ai_context'] as String?,
     );
   }
 
@@ -84,6 +106,11 @@ class Vocabulary {
     int? timesShown,
     DateTime? lastShown,
     DateTime? createdAt,
+    String? partOfSpeech,
+    List<String>? tags,
+    String? audioPronunciation,
+    String? aiGeneratedExample,
+    String? aiContext,
   }) {
     return Vocabulary(
       id: id ?? this.id,
@@ -97,6 +124,11 @@ class Vocabulary {
       timesShown: timesShown ?? this.timesShown,
       lastShown: lastShown ?? this.lastShown,
       createdAt: createdAt ?? this.createdAt,
+      partOfSpeech: partOfSpeech ?? this.partOfSpeech,
+      tags: tags ?? this.tags,
+      audioPronunciation: audioPronunciation ?? this.audioPronunciation,
+      aiGeneratedExample: aiGeneratedExample ?? this.aiGeneratedExample,
+      aiContext: aiContext ?? this.aiContext,
     );
   }
 

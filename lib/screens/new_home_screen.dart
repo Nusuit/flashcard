@@ -11,8 +11,11 @@ import '../widgets/review_analytics_dialog.dart';
 import '../widgets/chat_bubble.dart';
 import '../widgets/quiz_popup.dart';
 import '../core/quiz_scheduler.dart';
+import '../core/quiz_queue_builder.dart';
+import '../core/quiz_event_bus.dart';
 import '../core/storage_manager.dart';
 import 'knowledge_detail_screen.dart';
+import 'dart:async';
 
 class NewHomeScreen extends StatefulWidget {
   const NewHomeScreen({super.key});
@@ -28,25 +31,36 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
   Knowledge? _currentQuizKnowledge;
   final QuizScheduler _quizScheduler = QuizScheduler();
   final StorageManager _storageManager = StorageManager();
+  StreamSubscription<QuizEvent>? _quizEventSubscription;
+  int? _currentQueueItemId; // Track queue item ID for SM-2 updates
 
   @override
   void initState() {
     super.initState();
 
-    // Setup quiz scheduler
-    _quizScheduler.onQuizReady = (question, knowledge) {
-      setState(() {
-        _currentQuiz = question;
-        _currentQuizKnowledge = knowledge;
-      });
-    };
+    // Listen to quiz events via EventBus (with error handling)
+    _quizEventSubscription = _quizScheduler.eventBus.stream.listen(
+      (event) {
+        if (event.type == QuizEventType.quizReady && mounted) {
+          setState(() {
+            _currentQuiz = event.data?['question'] as QuizQuestion?;
+            _currentQuizKnowledge = event.data?['knowledge'] as Knowledge?;
+            _currentQueueItemId = event.data?['queueItemId'] as int?;
+          });
+        }
+      },
+      onError: (error) {
+        debugPrint('Quiz event error: $error');
+      },
+    );
 
     // Start scheduler with 30-minute interval
-    _quizScheduler.start(interval: const Duration(minutes: 30));
+    _quizScheduler.start();
   }
 
   @override
   void dispose() {
+    _quizEventSubscription?.cancel();
     _quizScheduler.stop();
     super.dispose();
   }
@@ -62,6 +76,12 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
     );
 
     await _storageManager.updateQuizQuestion(updatedQuestion);
+
+    // Update quiz queue with SM-2 algorithm (non-blocking)
+    if (_currentQueueItemId != null) {
+      QuizQueueBuilder()
+          .updateAfterAnswer(_currentQueueItemId!, score, isCorrect);
+    }
   }
 
   @override

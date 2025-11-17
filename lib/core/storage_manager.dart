@@ -5,6 +5,7 @@ import '../models/knowledge.dart';
 import '../models/quiz_question.dart';
 import '../models/quiz_history.dart';
 import '../models/app_settings.dart';
+import '../models/quiz_queue_item.dart';
 
 /// Manages all local SQLite database operations
 class StorageManager {
@@ -29,7 +30,7 @@ class StorageManager {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
     );
@@ -39,14 +40,17 @@ class StorageManager {
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       // Add new columns to knowledge table
-      await db.execute('ALTER TABLE knowledge ADD COLUMN description TEXT DEFAULT ""');
+      await db.execute(
+          'ALTER TABLE knowledge ADD COLUMN description TEXT DEFAULT ""');
       await db.execute('ALTER TABLE knowledge ADD COLUMN reminder_time TEXT');
-      await db.execute('ALTER TABLE knowledge ADD COLUMN pdf_files TEXT DEFAULT ""');
+      await db.execute(
+          'ALTER TABLE knowledge ADD COLUMN pdf_files TEXT DEFAULT ""');
       await db.execute('ALTER TABLE knowledge ADD COLUMN last_modified TEXT');
     }
     if (oldVersion < 3) {
       // Add mode column to knowledge table
-      await db.execute('ALTER TABLE knowledge ADD COLUMN mode TEXT DEFAULT "normal"');
+      await db.execute(
+          'ALTER TABLE knowledge ADD COLUMN mode TEXT DEFAULT "normal"');
     }
   }
 
@@ -120,10 +124,39 @@ class StorageManager {
     ''');
 
     // Create indexes for better query performance
-    await db.execute('CREATE INDEX idx_vocabulary_language ON vocabulary(language)');
-    await db.execute('CREATE INDEX idx_vocabulary_last_shown ON vocabulary(last_shown)');
-    await db.execute('CREATE INDEX idx_quiz_questions_knowledge_id ON quiz_questions(knowledge_id)');
-    await db.execute('CREATE INDEX idx_quiz_history_answered_at ON quiz_history(answered_at)');
+    await db.execute(
+        'CREATE INDEX idx_vocabulary_language ON vocabulary(language)');
+    await db.execute(
+        'CREATE INDEX idx_vocabulary_last_shown ON vocabulary(last_shown)');
+    await db.execute(
+        'CREATE INDEX idx_quiz_questions_knowledge_id ON quiz_questions(knowledge_id)');
+    await db.execute(
+        'CREATE INDEX idx_quiz_history_answered_at ON quiz_history(answered_at)');
+
+    // Quiz queue table (for v4+)
+    if (version >= 4) {
+      await db.execute('''
+        CREATE TABLE quiz_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          knowledge_id INTEGER NOT NULL,
+          question_id INTEGER NOT NULL,
+          priority INTEGER DEFAULT 100,
+          next_review_date TEXT NOT NULL,
+          easiness_factor REAL DEFAULT 2.5,
+          current_interval INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (knowledge_id) REFERENCES knowledge(id) ON DELETE CASCADE,
+          FOREIGN KEY (question_id) REFERENCES quiz_questions(id) ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute(
+          'CREATE INDEX idx_queue_priority ON quiz_queue(priority DESC, next_review_date)');
+      await db.execute(
+          'CREATE INDEX idx_queue_knowledge ON quiz_queue(knowledge_id)');
+      await db.execute(
+          'CREATE INDEX idx_queue_review_date ON quiz_queue(next_review_date)');
+    }
   }
 
   // ==================== VOCABULARY OPERATIONS ====================
@@ -138,7 +171,7 @@ class StorageManager {
   Future<List<Vocabulary>> getAllVocabulary({String? language}) async {
     final db = await database;
     final List<Map<String, dynamic>> maps;
-    
+
     if (language != null) {
       maps = await db.query(
         'vocabulary',
@@ -205,7 +238,8 @@ class StorageManager {
     if (prioritizeWeak) {
       // Prioritize items with low success rate or never shown
       query += language != null ? ' AND' : ' WHERE';
-      query += ' (times_shown = 0 OR (times_correct * 1.0 / times_shown) < 0.6)';
+      query +=
+          ' (times_shown = 0 OR (times_correct * 1.0 / times_shown) < 0.6)';
     }
 
     query += ' ORDER BY RANDOM() LIMIT ?';
@@ -227,7 +261,7 @@ class StorageManager {
   Future<List<Knowledge>> getAllKnowledge({String? topic}) async {
     final db = await database;
     final List<Map<String, dynamic>> maps;
-    
+
     if (topic != null) {
       maps = await db.query(
         'knowledge',
@@ -316,7 +350,8 @@ class StorageManager {
     String query = 'SELECT * FROM quiz_questions';
 
     if (prioritizeWeak) {
-      query += ' WHERE (times_shown = 0 OR (times_correct * 1.0 / times_shown) < 0.6)';
+      query +=
+          ' WHERE (times_shown = 0 OR (times_correct * 1.0 / times_shown) < 0.6)';
     }
 
     query += ' ORDER BY RANDOM() LIMIT ?';
@@ -389,7 +424,8 @@ class StorageManager {
     return {
       'total': total,
       'correct': correct,
-      'accuracy': total > 0 ? (correct / total * 100).toStringAsFixed(1) : '0.0',
+      'accuracy':
+          total > 0 ? (correct / total * 100).toStringAsFixed(1) : '0.0',
     };
   }
 
@@ -444,18 +480,21 @@ class StorageManager {
   /// Get total counts for dashboard
   Future<Map<String, int>> getCounts() async {
     final db = await database;
-    
+
     final vocabCount = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COUNT(*) FROM vocabulary'),
-    ) ?? 0;
-    
+          await db.rawQuery('SELECT COUNT(*) FROM vocabulary'),
+        ) ??
+        0;
+
     final knowledgeCount = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COUNT(*) FROM knowledge'),
-    ) ?? 0;
-    
+          await db.rawQuery('SELECT COUNT(*) FROM knowledge'),
+        ) ??
+        0;
+
     final questionsCount = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COUNT(*) FROM quiz_questions'),
-    ) ?? 0;
+          await db.rawQuery('SELECT COUNT(*) FROM quiz_questions'),
+        ) ??
+        0;
 
     return {
       'vocabulary': vocabCount,
@@ -478,6 +517,148 @@ class StorageManager {
     await db.delete('knowledge');
     await db.delete('quiz_questions');
     await db.delete('quiz_history');
+    await db.delete('quiz_queue');
     await db.delete('settings');
+  }
+
+  // ==================== QUIZ QUEUE OPERATIONS ====================
+
+  /// Insert a quiz item into the queue
+  ///
+  /// API Test:
+  /// ```dart
+  /// final item = QuizQueueItem(
+  ///   knowledgeId: 1,
+  ///   questionId: 5,
+  ///   priority: 85,
+  ///   nextReviewDate: DateTime.now(),
+  ///   easinessFactor: 2.5,
+  ///   currentInterval: 0,
+  /// );
+  /// final id = await storage.insertQuizQueue(item);
+  /// print('Inserted queue item: $id');
+  /// // Check: SELECT * FROM quiz_queue WHERE id = $id
+  /// ```
+  Future<int> insertQuizQueue(QuizQueueItem item) async {
+    final db = await database;
+    return await db.insert('quiz_queue', item.toMap());
+  }
+
+  /// Get next quiz from queue (highest priority, due for review)
+  ///
+  /// API Test:
+  /// ```dart
+  /// final item = await storage.getNextQuizFromQueue();
+  /// print('Next quiz: knowledge=${item?.knowledgeId}, priority=${item?.priority}');
+  /// // Expected: <10ms response time, highest priority + earliest due date
+  /// // SQL: ORDER BY priority DESC, next_review_date ASC LIMIT 1
+  /// ```
+  ///
+  /// Performance: Uses idx_queue_priority index for O(1) lookup
+  Future<QuizQueueItem?> getNextQuizFromQueue() async {
+    final db = await database;
+    final maps = await db.rawQuery('''
+      SELECT * FROM quiz_queue
+      WHERE next_review_date <= datetime('now')
+      ORDER BY priority DESC, next_review_date ASC
+      LIMIT 1
+    ''');
+
+    if (maps.isEmpty) return null;
+    return QuizQueueItem.fromMap(maps.first);
+  }
+
+  /// Get study session (10 questions for a knowledge)
+  ///
+  /// API Test:
+  /// ```dart
+  /// final session = await storage.getStudySession(knowledgeId: 1, limit: 5);
+  /// print('Study session: ${session.length} questions');
+  /// // Expected: 5 items sorted by priority DESC
+  /// // All items.knowledgeId == 1
+  /// ```
+  Future<List<QuizQueueItem>> getStudySession(int knowledgeId,
+      {int limit = 10}) async {
+    final db = await database;
+    final maps = await db.query(
+      'quiz_queue',
+      where: 'knowledge_id = ?',
+      whereArgs: [knowledgeId],
+      orderBy: 'priority DESC, next_review_date ASC',
+      limit: limit,
+    );
+
+    return List.generate(maps.length, (i) => QuizQueueItem.fromMap(maps[i]));
+  }
+
+  /// Update quiz queue item after answer
+  ///
+  /// API Test:
+  /// ```dart
+  /// final item = await storage.getQuizQueueById(5);
+  /// final updated = item!.copyWith(
+  ///   priority: 95,
+  ///   easinessFactor: 2.7,
+  ///   currentInterval: 6,
+  ///   nextReviewDate: DateTime.now().add(Duration(days: 6)),
+  /// );
+  /// await storage.updateQuizQueue(updated);
+  /// // Check: SELECT * FROM quiz_queue WHERE id = 5
+  /// ```
+  Future<int> updateQuizQueue(QuizQueueItem item) async {
+    final db = await database;
+    return await db.update(
+      'quiz_queue',
+      item.toMap(),
+      where: 'id = ?',
+      whereArgs: [item.id],
+    );
+  }
+
+  /// Delete quiz queue item
+  Future<int> deleteQuizQueue(int id) async {
+    final db = await database;
+    return await db.delete(
+      'quiz_queue',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  /// Delete all queue items for a knowledge
+  Future<int> deleteQuizQueueByKnowledge(int knowledgeId) async {
+    final db = await database;
+    return await db.delete(
+      'quiz_queue',
+      where: 'knowledge_id = ?',
+      whereArgs: [knowledgeId],
+    );
+  }
+
+  /// Get quiz queue item by ID
+  Future<QuizQueueItem?> getQuizQueueById(int id) async {
+    final db = await database;
+    final maps = await db.query(
+      'quiz_queue',
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    if (maps.isEmpty) return null;
+    return QuizQueueItem.fromMap(maps.first);
+  }
+
+  /// Check if queue exists for knowledge
+  Future<bool> hasQuizQueue(int knowledgeId) async {
+    final db = await database;
+    final count = Sqflite.firstIntValue(
+          await db.rawQuery(
+            'SELECT COUNT(*) FROM quiz_queue WHERE knowledge_id = ?',
+            [knowledgeId],
+          ),
+        ) ??
+        0;
+
+    return count > 0;
   }
 }

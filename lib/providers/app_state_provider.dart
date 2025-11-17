@@ -3,11 +3,13 @@ import '../models/app_settings.dart';
 import '../models/vocabulary.dart';
 import '../models/knowledge.dart';
 import '../core/storage_manager.dart';
+import '../core/quiz_scheduler.dart';
+import '../core/quiz_queue_builder.dart';
 
 /// Global app state management using Provider
 class AppStateProvider extends ChangeNotifier {
   final StorageManager _storage = StorageManager();
-  
+
   AppSettings _settings = AppSettings();
   Map<String, int> _counts = {};
   Map<String, dynamic> _statistics = {};
@@ -82,7 +84,13 @@ class AppStateProvider extends ChangeNotifier {
   /// Add knowledge
   Future<void> addKnowledge(Knowledge knowledge) async {
     try {
-      await _storage.insertKnowledge(knowledge);
+      final id = await _storage.insertKnowledge(knowledge);
+      QuizScheduler().clearCache(); // Clear cache when data changes
+
+      // Build quiz queue in background (non-blocking)
+      final knowledgeWithId = knowledge.copyWith(id: id);
+      QuizQueueBuilder().buildQueueForKnowledge(knowledgeWithId);
+
       await refreshDashboard();
     } catch (e) {
       print('Error adding knowledge: $e');
