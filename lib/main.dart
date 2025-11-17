@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'core/reminder_engine.dart';
 import 'core/storage_manager.dart';
 import 'providers/app_state_provider.dart';
@@ -9,13 +10,16 @@ import 'screens/new_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  // Load environment variables
+  await dotenv.load(fileName: ".env");
+
   // Initialize sqflite for desktop platforms
   if (Platform.isWindows || Platform.isLinux) {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   }
-  
+
   // Initialize core services (only on mobile platforms)
   if (Platform.isAndroid || Platform.isIOS) {
     final reminderEngine = ReminderEngine();
@@ -74,9 +78,8 @@ class KnopApp extends StatelessWidget {
                 ),
               ),
             ),
-            themeMode: appState.settings.isDarkMode 
-                ? ThemeMode.dark 
-                : ThemeMode.light,
+            themeMode:
+                appState.settings.isDarkMode ? ThemeMode.dark : ThemeMode.light,
             home: const NewHomeScreen(),
           );
         },

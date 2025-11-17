@@ -4,9 +4,14 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import '../providers/app_state_provider.dart';
 import '../models/knowledge.dart';
+import '../models/quiz_question.dart';
 import '../widgets/create_knowledge_dialog.dart';
 import '../widgets/flashcard_overlay.dart';
 import '../widgets/review_analytics_dialog.dart';
+import '../widgets/chat_bubble.dart';
+import '../widgets/quiz_popup.dart';
+import '../core/quiz_scheduler.dart';
+import '../core/storage_manager.dart';
 import 'knowledge_detail_screen.dart';
 
 class NewHomeScreen extends StatefulWidget {
@@ -19,6 +24,45 @@ class NewHomeScreen extends StatefulWidget {
 class _NewHomeScreenState extends State<NewHomeScreen> {
   Knowledge? _selectedKnowledge;
   bool _showOverlay = false;
+  QuizQuestion? _currentQuiz;
+  Knowledge? _currentQuizKnowledge;
+  final QuizScheduler _quizScheduler = QuizScheduler();
+  final StorageManager _storageManager = StorageManager();
+
+  @override
+  void initState() {
+    super.initState();
+
+    // Setup quiz scheduler
+    _quizScheduler.onQuizReady = (question, knowledge) {
+      setState(() {
+        _currentQuiz = question;
+        _currentQuizKnowledge = knowledge;
+      });
+    };
+
+    // Start scheduler with 30-minute interval
+    _quizScheduler.start(interval: const Duration(minutes: 30));
+  }
+
+  @override
+  void dispose() {
+    _quizScheduler.stop();
+    super.dispose();
+  }
+
+  void _onQuizAnswered(bool isCorrect, int score) async {
+    if (_currentQuiz == null) return;
+
+    // Update question statistics
+    final updatedQuestion = _currentQuiz!.copyWith(
+      timesShown: _currentQuiz!.timesShown + 1,
+      timesCorrect: _currentQuiz!.timesCorrect + (isCorrect ? 1 : 0),
+      lastShown: DateTime.now(),
+    );
+
+    await _storageManager.updateQuizQuestion(updatedQuestion);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,6 +87,21 @@ class _NewHomeScreenState extends State<NewHomeScreen> {
                     },
                     mode: OverlayMode.transparent,
                   ),
+                // Quiz popup at top-right
+                if (_currentQuiz != null && _currentQuizKnowledge != null)
+                  QuizPopup(
+                    question: _currentQuiz!,
+                    knowledgeContent: _currentQuizKnowledge!.content,
+                    onClose: () {
+                      setState(() {
+                        _currentQuiz = null;
+                        _currentQuizKnowledge = null;
+                      });
+                    },
+                    onAnswered: _onQuizAnswered,
+                  ),
+                // Chat bubble at bottom-right
+                const ChatBubble(),
               ],
             ),
           ),
