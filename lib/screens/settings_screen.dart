@@ -59,7 +59,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         children: [
           // Reminder Settings
-          _SectionHeader(title: 'Reminder Settings'),
+          const _SectionHeader(title: 'Reminder Settings'),
           ListTile(
             leading: const Icon(Icons.schedule),
             title: const Text('Reminder Interval'),
@@ -99,7 +99,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
 
           // LLM Settings
-          _SectionHeader(title: 'AI Settings'),
+          const _SectionHeader(title: 'AI Settings'),
           ListTile(
             leading: Icon(
               Icons.smart_toy,
@@ -137,7 +137,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
 
           // Appearance
-          _SectionHeader(title: 'Appearance'),
+          const _SectionHeader(title: 'Appearance'),
           SwitchListTile(
             secondary: Icon(
               settings.isDarkMode ? Icons.dark_mode : Icons.light_mode,
@@ -151,7 +151,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const Divider(),
 
           // About
-          _SectionHeader(title: 'About'),
+          const _SectionHeader(title: 'About'),
           const ListTile(
             leading: Icon(Icons.info_outline),
             title: Text('Version'),

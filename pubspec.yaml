@@ -29,10 +29,16 @@ dependencies:
   # UI components
   cupertino_icons: ^1.0.2
   google_fonts: ^6.1.0
+  fl_chart: ^0.66.0
+
+  # File handling
+  file_picker: ^6.1.1
+  syncfusion_flutter_pdf: ^24.2.9
 
   # Utilities
   intl: ^0.18.1
   shared_preferences: ^2.2.2
+  window_manager: ^0.3.7
 
 dev_dependencies:
   flutter_test:

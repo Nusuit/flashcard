@@ -29,9 +29,25 @@ class StorageManager {
 
     return await openDatabase(
       path,
-      version: 1,
+      version: 3,
       onCreate: _createTables,
+      onUpgrade: _onUpgrade,
     );
+  }
+
+  /// Upgrade database schema
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add new columns to knowledge table
+      await db.execute('ALTER TABLE knowledge ADD COLUMN description TEXT DEFAULT ""');
+      await db.execute('ALTER TABLE knowledge ADD COLUMN reminder_time TEXT');
+      await db.execute('ALTER TABLE knowledge ADD COLUMN pdf_files TEXT DEFAULT ""');
+      await db.execute('ALTER TABLE knowledge ADD COLUMN last_modified TEXT');
+    }
+    if (oldVersion < 3) {
+      // Add mode column to knowledge table
+      await db.execute('ALTER TABLE knowledge ADD COLUMN mode TEXT DEFAULT "normal"');
+    }
   }
 
   /// Create all database tables
@@ -59,7 +75,12 @@ class StorageManager {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         topic TEXT NOT NULL,
         content TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        description TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        reminder_time TEXT,
+        pdf_files TEXT DEFAULT '',
+        last_modified TEXT,
+        mode TEXT DEFAULT 'normal'
       )
     ''');
 

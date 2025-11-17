@@ -187,7 +187,7 @@ class _QuizScreenState extends State<QuizScreen> {
             padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Text(
-                'Score: $_correctCount/${_currentIndex}',
+                'Score: $_correctCount/$_currentIndex',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
             ),

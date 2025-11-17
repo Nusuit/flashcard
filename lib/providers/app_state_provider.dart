@@ -17,6 +17,7 @@ class AppStateProvider extends ChangeNotifier {
   Map<String, int> get counts => _counts;
   Map<String, dynamic> get statistics => _statistics;
   bool get isLoading => _isLoading;
+  StorageManager get storage => _storage;
 
   AppStateProvider() {
     _loadInitialData();
@@ -86,6 +87,16 @@ class AppStateProvider extends ChangeNotifier {
     } catch (e) {
       print('Error adding knowledge: $e');
       rethrow;
+    }
+  }
+
+  /// Get knowledge list
+  Future<List<Knowledge>> getKnowledgeList() async {
+    try {
+      return await _storage.getAllKnowledge();
+    } catch (e) {
+      print('Error getting knowledge list: $e');
+      return [];
     }
   }
 

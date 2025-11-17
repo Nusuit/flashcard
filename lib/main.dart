@@ -5,7 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'core/reminder_engine.dart';
 import 'core/storage_manager.dart';
 import 'providers/app_state_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/new_home_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,14 +44,20 @@ class KnopApp extends StatelessWidget {
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
               colorScheme: ColorScheme.fromSeed(
-                seedColor: Colors.indigo,
+                seedColor: const Color(0xFF87CEEB), // Sky blue
                 brightness: Brightness.light,
+                primary: const Color(0xFF87CEEB),
+                secondary: const Color(0xFFB0E0E6),
+                surface: Colors.white,
+                background: const Color(0xFFF0F8FF), // Alice blue
               ),
+              scaffoldBackgroundColor: const Color(0xFFF0F8FF),
               useMaterial3: true,
               cardTheme: CardThemeData(
                 elevation: 2,
+                color: Colors.white,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                 ),
               ),
             ),
@@ -71,7 +77,7 @@ class KnopApp extends StatelessWidget {
             themeMode: appState.settings.isDarkMode 
                 ? ThemeMode.dark 
                 : ThemeMode.light,
-            home: const HomeScreen(),
+            home: const NewHomeScreen(),
           );
         },
       ),

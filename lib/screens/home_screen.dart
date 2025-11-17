@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_state_provider.dart';
-import '../core/flashcard_engine.dart';
-import '../core/reminder_engine.dart';
 import 'vocabulary_screen.dart';
 import 'knowledge_screen.dart';
 import 'settings_screen.dart';
